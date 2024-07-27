@@ -5,7 +5,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-import io
+# import io
 import os
 import pandas as pd
 import plotly.express as px
@@ -13,10 +13,10 @@ import plotly.io as pio
 import pyarrow as pl
 # import plotly.express as px
 import plotly.graph_objects as go
-from config import args
+# from config import args
 from pickle import FALSE, TRUE
-import requests
-from io import BytesIO
+# import requests
+# from io import BytesIO
 from matplotlib import pyplot as plt
 from matplotlib import image as mpimg
 import boto3
@@ -37,6 +37,11 @@ import matplotlib.image as mpimg
 import numpy as np
 from io import BytesIO
 import skimage.io
+import scanpy as sc
+import anndata as ad
+import plotly.graph_objects as go
+from ipywidgets import widgets
+from IPython.display import display
 
 def show_images_single_file_test(file, combine=False):
     channels = ['OrigDNA', 'OrigAGP', 'OrigER', 'OrigMito', 'OrigRNA']
@@ -201,105 +206,109 @@ def plot_features(data=None, x_feature="Cells_AreaShape_Eccentricity",
     fig = px.scatter(data, x=x_feature, y=y_feature, color=color, 
                      hover_name=hover_name, hover_data=hover_data)
     fig.show()
-    # pio.write_html(fig, file="scatter_plot.html", auto_open=True)
-
-#Method to display all fields of images and combined channel images from single metadata
-# def show_images_single_file(file, combined=True):
-#     channels = ['OrigDNA', 'OrigAGP', 'OrigER', 'OrigMito', 'OrigRNA']
-#     color_map = {
-#         'OrigDNA': 'Reds',   # Red colormap
-#         'OrigAGP': 'Greens', # Green colormap
-#         'OrigER': 'Blues',   # Blue colormap
-#         'OrigMito': 'YlOrBr',# Yellow-orange-brown colormap
-#         'OrigRNA': 'PuBuGn'  # Purple-blue-green colormap
-#     }
-
-#     s3_client = boto3.client("s3", config=Config(signature_version=UNSIGNED))
-
-#     for _, row in file.iterrows():
-#         directory_path = f"images/{row['Metadata_Source']}/{row['Metadata_Plate']}/{row['Metadata_Well']}/{row['Metadata_Site']}"
-#         os.makedirs(directory_path, exist_ok=True)
-        
-#         if combined:
-#             combined_image = None
-
-#         for channel in channels:
-#             path_name_column = f'PathName_{channel}'
-#             file_name_column = f'FileName_{channel}'
-#             image_url = os.path.join(row[path_name_column], row[file_name_column])
-
-#             bucket = image_url.split("/")[2]
-#             key = "/".join(image_url.split("/")[3:])
-            
-#             response = s3_client.get_object(Bucket=bucket, Key=key)
-#             image = Image.open(BytesIO(response["Body"].read())).convert("L")
-#             image = np.array(image)
-#             if combined:
-#                 # Normalize the image and add it to the combined image   
-#                 image_normalized = image / np.max(image)
-#                 if combined_image is None:
-#                     combined_image = [image_normalized]
-#                 else:
-#                     combined_image = np.concatenate((combined_image, [image_normalized]), axis=2)
-#             else:
-#                 # Save individual channel images
-#                 output_path = os.path.join(directory_path, f"{channel}_{row['Metadata_Well']}_{row['Metadata_Site']}.tiff")
-#                 Image.fromarray(image).save(output_path, format="TIFF")
-
-#         if combined and combined_image is not None:
-#             combined_output_path = os.path.join(directory_path, f"combined_{row['Metadata_Well']}_{row['Metadata_Site']}.tiff")
-#             Image.fromarray(combined_image).save(combined_output_path, format="TIFF")
 
 
 
-#Method to display images corresponding to meta_data.
-def show_images(linked_df, channel = None, iloc = 0): #Need to modify and add functionality
-    """
-    
-    """
-    # Assuming linked_df is your DataFrame and iloc is the index you're interested in
-    channels = ['OrigDNA', 'OrigAGP', 'OrigER', 'OrigMito', 'OrigRNA']
-    if channel is not None:
-        path_name_column = f'PathName_{channel}'
-        file_name_column = f'FileName_{channel}'
-        image_url = os.path.join(
-        linked_df.iloc[iloc][path_name_column], linked_df.iloc[iloc][path_name_column]
+
+# Method to display an interactive UMAP plot with metadata labels
+def display_interactive_umap(adata_path, clicked_points_path):
+    adata = ad.read_h5ad(adata_path)
+    meta = adata.obs
+
+    # Compute UMAP embedding
+    sc.tl.umap(adata)
+    umap_coords = adata.obsm['X_umap']
+
+    # Initialize the click data list and DataFrame
+    click_data = []
+    click_df = pd.DataFrame(columns=['Metadata_Source', 'Metadata_Batch', 'Metadata_Plate', 'Metadata_Well'])
+
+    # Dropdown widget for selecting the metadata column
+    metadata_cols = sorted(meta.columns.tolist())  # Sort columns lexicographically
+    dropdown = widgets.Dropdown(
+        options=metadata_cols,
+        value=metadata_cols[0],
+        description='Label:',
     )
-        s3_client = boto3.client("s3", config=Config(signature_version=UNSIGNED)) #Configuring boto3 client
-        response = s3_client.get_object(
-        Bucket=image_url.split("/")[2], Key="/".join(image_url.split("/")[3:])
+
+    # Function to create the scatter plot with a specific metadata column for labeling and color coding
+    def create_scatter_plot(label_col):
+        # Map the metadata column to colors using Plotly's built-in function
+        color_sequence = px.colors.qualitative.Plotly
+        unique_values = sorted(meta[label_col].unique())  # Sort values lexicographically
+        color_map = {val: color_sequence[i % len(color_sequence)] for i, val in enumerate(unique_values)}
+
+        fig = go.FigureWidget()
+
+        for value in unique_values:
+            indices = meta[label_col] == value
+            scatter = go.Scatter(
+                x=umap_coords[indices, 0] * 5, 
+                y=umap_coords[indices, 1],
+                mode='markers',
+                marker=dict(color=color_map[value]),
+                name=value,
+                text=meta[indices][label_col],
+                customdata=meta[indices][['Metadata_Source', 'Metadata_Batch', 'Metadata_Plate', 'Metadata_Well']],
+                visible=True
+            )
+            fig.add_trace(scatter)
+
+        fig.update_layout(
+            title="UMAP Scatter Plot",
+            updatemenus=[
+                {
+                    "buttons": [
+                        {
+                            "label": value,
+                            "method": "update",
+                            "args": [
+                                {"visible": [val == value for val in unique_values]},
+                                {"title": f"UMAP Scatter Plot - {value}"}
+                            ]
+                        }
+                        for value in unique_values
+                    ],
+                    "direction": "down",
+                    "showactive": True
+                }
+            ]
         )
-        image = mpimg.imread(BytesIO(response["Body"].read()), format="tiff")
 
-        # fig = plt.imshow(image)
-        # print(image_url)
-        # fig.show()
+        # Add click event handling for all traces
+        for trace in fig.data:
+            trace.on_click(handle_click)
 
-    else:
-    # Create a figure with 1 row and 5 columns
-        fig, axs = plt.subplots(1, 5, figsize=(20, 4))
-        for i, channel in enumerate(channels):
-            path_name_column = f'PathName_{channel}'
-            file_name_column = f'FileName_{channel}'
-            image_url = os.path.join(
-                linked_df.iloc[iloc][path_name_column], linked_df.iloc[iloc][file_name_column]
-            )
+        return fig
 
-            s3_client = boto3.client("s3", config=Config(signature_version=UNSIGNED))
-            response = s3_client.get_object(
-                Bucket=image_url.split("/")[2], Key="/".join(image_url.split("/")[3:])
-            )
+    # Click event handling function
+    def handle_click(trace, points, state):
+        nonlocal click_data, click_df
+        if points.point_inds:
+            ind = points.point_inds[0]
+            click_info = {
+                'Metadata_Source': trace.customdata[ind][0],
+                'Metadata_Batch': trace.customdata[ind][1],
+                'Metadata_Plate': trace.customdata[ind][2],
+                'Metadata_Well': trace.customdata[ind][3]
+            }
+            click_data.append(click_info)
 
-            image = mpimg.imread(BytesIO(response["Body"].read()), format='tiff')
+            # Convert the click_info to a DataFrame and concatenate
+            click_info_df = pd.DataFrame([click_info])
+            click_df = pd.concat([click_df, click_info_df], ignore_index=True)
+            click_df.to_csv(clicked_points_path, index=False)
 
-            axs[i].imshow(image)
-            axs[i].set_title(channel)
-            axs[i].axis('off')  # Hide axis
+            print("Click registered:", click_info)
 
-    # Save the plot to a file
-    plt.savefig('output_figure.tiff', dpi=300, format='tiff')
+    # Function to update the plot based on dropdown selection
+    def update_plot(change):
+        fig = create_scatter_plot(change.new)
+        display(fig)
 
-    # # Display the saved plot
-    # Image('output_figure.png')
-    
-    
+    dropdown.observe(update_plot, names='value')
+
+    # Display the dropdown and the initial plot
+    display(dropdown)
+    initial_fig = create_scatter_plot(dropdown.value)
+    display(initial_fig)
