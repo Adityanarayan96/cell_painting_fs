@@ -74,6 +74,8 @@ def add_metadata(stats: pd.DataFrame, meta: pd.DataFrame):
     stats['Metadata_Source'] = stats['Metadata_Plate'].map(source_map)
     parts = stats['feature'].str.split('_', expand=True)
     stats['compartment'] = parts[0].astype('category')
+    #Adding a new column for type (intensity, texture, etc)
+    stats['type'] = parts[1].astype('category')
     stats['family'] = parts[range(3)].apply('_'.join,
                                             axis=1).astype('category')
 
@@ -98,10 +100,22 @@ def compute_stats(parquet_path, stats_path):
     add_metadata(stats, dframe[find_meta_cols(dframe)])
     stats.to_parquet(stats_path)
 
+def compute_negcon_stats(parquet_path, neg_stats_path):
+    '''create statistics of negative controls platewise for columns without nan/inf values only'''
+    logger.info('Loading data')
+    dframe = pd.read_parquet(parquet_path)
+    logger.info('Removing nan and inf columns')
+    dframe = remove_nan_infs_columns(dframe)
+    negcon = dframe.query('Metadata_JCP2022 == "DMSO"')
+    logger.info('computing stats for negcons')
+    neg_stats = get_plate_stats(negcon)
+    logger.info('stats done.')
+    add_metadata(neg_stats, dframe[find_meta_cols(dframe)])
+    neg_stats.to_parquet(neg_stats_path)
 
-def select_variant_features(parquet_path, stats_path, variant_feats_path):
+def select_variant_features(parquet_path, stats_path, variant_feats_path, union=True):
     '''
-    Filtered out features that have mad == 0 or abs_coef_var>1e-3 in any plate.
+    Filtered out features that have mad == 0 or abs_coef_var>1e-3 in all/any plates.
     stats are computed using negative controls only
     '''
     dframe = pd.read_parquet(parquet_path)
@@ -110,7 +124,10 @@ def select_variant_features(parquet_path, stats_path, variant_feats_path):
     # Select variant_features
     stats = stats.query('mad!=0 and abs_coef_var>1e-3')
     groups = stats.groupby('Metadata_Plate', observed=True)['feature']
-    variant_features = set.intersection(*groups.agg(set).tolist())
+    if union == True:
+        variant_features = set.union(*groups.agg(set).tolist())
+    else:
+        variant_features = set.intersection(*groups.agg(set).tolist())
 
     # Select plates with variant features
     stats = stats.query('feature in @variant_features')
