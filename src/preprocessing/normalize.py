@@ -26,6 +26,7 @@ def mad(variant_feats_path, stats_path, normalized_path):
 
     # Get normalized features (epsilon = 0) for all plates that have MAD stats
     # -= and /= are inplace operations. i.e save memory
+
     vals -= np.repeat(medians, counts, axis=0)
     vals /= np.repeat(mads, counts, axis=0)
 

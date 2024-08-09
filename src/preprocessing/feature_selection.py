@@ -1,29 +1,25 @@
-# Description: This file contains functions for feature selection.
-import plotly.express as px
-import plotly.io as pio
-import pyarrow as pl
-from matplotlib import pyplot as plt
-from matplotlib import image as mpimg
+import logging
 
-def feature_metrics_list(dframe_path):
-    """
-    This function creates a list of metrics calculated for single feature combinations 
-    """
+import pandas as pd
+from pycytominer.operations import correlation_threshold, variance_threshold
 
-    
+from .metadata import find_feat_cols
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
+def select_features(dframe_path, feat_selected_path):
+    '''Run feature selection'''
+    dframe = pd.read_parquet(dframe_path)
+    features = find_feat_cols(dframe.columns)
+    low_variance = variance_threshold(dframe, features)
+    features = [f for f in features if f not in low_variance]
+    logger.info(f'{len(low_variance)} features removed by variance_threshold')
+    high_corr = correlation_threshold(dframe, features)
+    features = [f for f in features if f not in high_corr]
+    logger.info(f'{len(high_corr)} features removed by correlation_threshold')
 
-def feature_metric_calculation(dframe_path, indice, metric):
-    """
-    This function performs feature selection on the data.
-    data: A pandas dataframe.
-    indice: indice of feature to calculate metrics on
-    metric to calculate
+    dframe.drop(columns=low_variance + high_corr, inplace=True)
 
-    """
-
-    # Calculate the metric
-    metric_value = metrics.metric(dframe_path)
-
-    return metric_value
+    dframe.reset_index(drop=True).to_parquet(feat_selected_path)

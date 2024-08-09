@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 from sklearn.metrics import silhouette_score
+import json
 
 from preprocessing.io import split_parquet, to_anndata
 
@@ -43,11 +44,47 @@ def cluster(parquet_path, adata_path):
     sc.tl.leiden(adata, key_added=CLUSTER_KEY)
     adata.write_h5ad(adata_path, compression='gzip')
 
+def cluster_featurewise(parquet_path, adata_path):
+    # stats = pd.read_parquet(parquet_path)
+    # parts = stats['feature'].str.split('_', expand=True)
+    # stats['compartment'] = parts[0].astype('category')
+    # #Adding a new column for type (intensity, texture, etc)
+    # stats['type'] = parts[1].astype('category')
+    # stats['family'] = parts[range(3)].apply('_'.join,
+    #                                         axis=1).astype('category')
+    adata = filter_dmso_anndata(parquet_path)
+    for i, feature in enumerate(adata.var_names):
+        logger.info(f'compute neighbors for feature: {feature}')
+        # Creating a temporary AnnData object with only the single feature
+        adata_single_feature = ad.AnnData(X=adata[:, i].X, obs=adata.obs, var=adata.var.iloc[[i]])
+        sc.pp.neighbors(adata_single_feature, n_neighbors=25, metric='cosine')
+        logger.info(f'run clustering for feature: {feature}')
+        cluster_key_feature = f"{CLUSTER_KEY}_{feature}"
+        sc.tl.leiden(adata_single_feature, key_added=cluster_key_feature)
+        # Adding the cluster labels back to the original AnnData object
+        adata.obs[cluster_key_feature] = adata_single_feature.obs[cluster_key_feature]
+        if i == 5:
+            break
+    adata.write_h5ad(adata_path, compression='gzip')
 
 def nmi(adata_path, label_key, nmi_path):
     adata = ad.read_h5ad(adata_path)
     nmi = metrics.nmi(adata, label_key, CLUSTER_KEY)
     np.array(nmi).tofile(nmi_path)
+
+def nmi_featurewise(adata_path, label_key, nmi_path):
+    adata = ad.read_h5ad(adata_path)
+    nmi_scores = {}
+    for cluster_key_feature in adata.obs.columns:
+        # cluster_key_feature = f"{CLUSTER_KEY}_{feature}"
+        if cluster_key_feature.startswith("Metadata_Cluster_"):
+            nmi_score = metrics.nmi(adata, label_key, cluster_key_feature)
+            nmi_scores[cluster_key_feature] = nmi_score
+            logger.info(f'NMI for feature {cluster_key_feature}: {nmi_score}')
+    # Save the nmi_scores dictionary to a JSON file
+    with open(nmi_path, 'w') as json_file:
+        json.dump(nmi_scores, json_file, indent=4)
+    # print(nmi_scores)
 
 
 def ari(adata_path, label_key, ari_path):
@@ -182,6 +219,19 @@ def lisi_batch(adata_path, batch_key, lisi_batch_path):
         verbose=False,
     )
     np.array(ilisi).tofile(lisi_batch_path)
+
+def metric_featurewise(adata_path, metric_path, batch_key, label_key, metric = nmi):
+    adata = ad.read_h5ad(adata_path)
+    scores = {}
+    for cluster_key_feature in adata.obs.columns:
+        # cluster_key_feature = f"{CLUSTER_KEY}_{feature}"
+        if cluster_key_feature.startswith("Metadata_Cluster_"):
+            score = metric(adata, label_key, cluster_key_feature)
+            scores[cluster_key_feature] = score
+            logger.info(f'{metric} for feature {cluster_key_feature}: {score}')
+    # Save the nmi_scores dictionary to a JSON file
+    with open(metric_path, 'w') as json_file:
+        json.dump(metric_path, json_file, indent=4)
 
 
 def concat(*metric_paths, output_path):

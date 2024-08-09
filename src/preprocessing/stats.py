@@ -76,6 +76,7 @@ def add_metadata(stats: pd.DataFrame, meta: pd.DataFrame):
     stats['compartment'] = parts[0].astype('category')
     #Adding a new column for type (intensity, texture, etc)
     stats['type'] = parts[1].astype('category')
+    stats["technical"] = parts[3].astype('category')
     stats['family'] = parts[range(3)].apply('_'.join,
                                             axis=1).astype('category')
 
@@ -89,7 +90,7 @@ def remove_nan_infs_columns(dframe: pd.DataFrame) -> pd.DataFrame:
     return dframe[[c for c in dframe.columns if c not in redlist]]
 
 
-def compute_stats(parquet_path, stats_path):
+def compute_stats_2(parquet_path, stats_path):
     '''create statistics of platewise for columns without nan/inf values only'''
     logger.info('Loading data')
     dframe = pd.read_parquet(parquet_path)
@@ -140,7 +141,7 @@ def select_variant_features(parquet_path, stats_path, variant_feats_path, union=
     merge_parquet(meta, vals, variant_features, variant_feats_path)
 
 
-# def compute_stats(parquet_path, stats_path):
-#     dframe = pd.read_parquet(parquet_path)
-#     fea_stats = get_feat_stats(dframe)
-#     fea_stats.to_parquet(stats_path)
+def compute_stats(parquet_path, stats_path):
+    dframe = pd.read_parquet(parquet_path)
+    fea_stats = get_feat_stats(dframe)
+    fea_stats.to_parquet(stats_path)
