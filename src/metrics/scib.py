@@ -20,6 +20,7 @@ with warnings.catch_warnings():
 
 logger = logging.getLogger(__name__)
 CLUSTER_KEY = 'Metadata_Cluster'
+from tqdm import tqdm
 
 
 def filter_dmso_anndata(parquet_path):
@@ -53,7 +54,7 @@ def cluster_featurewise(parquet_path, adata_path):
     # stats['family'] = parts[range(3)].apply('_'.join,
     #                                         axis=1).astype('category')
     adata = filter_dmso_anndata(parquet_path)
-    for i, feature in enumerate(adata.var_names):
+    for i, feature in tqdm(enumerate(adata.var_names), total=len(adata.var_names), desc="Clustering Features"):
         logger.info(f'compute neighbors for feature: {feature}')
         # Creating a temporary AnnData object with only the single feature
         adata_single_feature = ad.AnnData(X=adata[:, i].X, obs=adata.obs, var=adata.var.iloc[[i]])
@@ -63,8 +64,8 @@ def cluster_featurewise(parquet_path, adata_path):
         sc.tl.leiden(adata_single_feature, key_added=cluster_key_feature)
         # Adding the cluster labels back to the original AnnData object
         adata.obs[cluster_key_feature] = adata_single_feature.obs[cluster_key_feature]
-        if i == 5:
-            break
+        # if i == 2:
+        #     break
     adata.write_h5ad(adata_path, compression='gzip')
 
 def nmi(adata_path, label_key, nmi_path):
@@ -75,7 +76,7 @@ def nmi(adata_path, label_key, nmi_path):
 def nmi_featurewise(adata_path, label_key, nmi_path):
     adata = ad.read_h5ad(adata_path)
     nmi_scores = {}
-    for cluster_key_feature in adata.obs.columns:
+    for cluster_key_feature in tqdm(adata.obs.columns, desc="Computing NMI"):
         # cluster_key_feature = f"{CLUSTER_KEY}_{feature}"
         if cluster_key_feature.startswith("Metadata_Cluster_"):
             nmi_score = metrics.nmi(adata, label_key, cluster_key_feature)

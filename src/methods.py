@@ -43,6 +43,7 @@ import plotly.graph_objects as go
 from ipywidgets import widgets
 from IPython.display import display
 
+
 def show_images_single_file_test(file, combine=False):
     channels = ['OrigDNA', 'OrigAGP', 'OrigER', 'OrigMito', 'OrigRNA']
     channel_colors = {
