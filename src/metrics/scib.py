@@ -97,7 +97,7 @@ def ari(adata_path, label_key, ari_path):
 def asw(parquet_path, label_key, asw_path):
     meta, feats, _ = filter_dmso(parquet_path)
     asw = silhouette_score(feats, meta[label_key], metric='cosine')
-    asw = (asw + 1) / 2
+    asw = (asw + 1) / 2 # This is done to force the metric between 0 and 1
     np.array(asw).tofile(asw_path)
 
 
@@ -114,6 +114,39 @@ def silhouette_batch(parquet_path, label_key, batch_key, asw_batch_path):
     )
     np.array(asw_batch).tofile(asw_batch_path)
 
+def asw_single_features(parquet_path, label_key, asw_path):
+    meta, feats, features = filter_dmso(parquet_path)
+    feature_scores = {features[i]: 0 for i in range(len(features))}
+    # print(len(feats))
+    feats = np.array(feats)
+    for i in tqdm(range(len(feats[0])), desc="Computing ASW"):
+        asw = silhouette_score(feats[:, i].reshape(-1 ,1), meta[label_key], metric='cosine')
+        asw = (asw + 1) / 2  # This is done to force the metric between 0 and 1
+        feature_scores[features[i]] = asw
+
+    with open(asw_path, 'w') as json_file:
+        json.dump(feature_scores, json_file, indent=4)
+
+
+def silhouette_batch_single_features(parquet_path, label_key, batch_key, asw_batch_path):
+    adata = filter_dmso_anndata(parquet_path)
+    adata.obsm['X_embd'] = adata.X
+    feature_scores = {}
+
+    for feature in tqdm(adata.var_names, desc="Computing ASW batch"):
+        adata.obsm['X_embd'] = adata[:, [feature]].X
+        asw_batch = metrics.silhouette_batch(
+            adata,
+            batch_key,
+            label_key,
+            'X_embd',
+            metric="cosine",
+            verbose=False,
+        )
+        feature_scores[feature] = asw_batch
+
+    with open(asw_batch_path, 'w') as json_file:
+        json.dump(feature_scores, json_file, indent=4)
 
 def pcr_batch(pre_parquet_path, post_parquet_path, batch_key, pcr_batch_path):
     adata = filter_dmso_anndata(pre_parquet_path)
@@ -220,19 +253,6 @@ def lisi_batch(adata_path, batch_key, lisi_batch_path):
         verbose=False,
     )
     np.array(ilisi).tofile(lisi_batch_path)
-
-def metric_featurewise(adata_path, metric_path, batch_key, label_key, metric = nmi):
-    adata = ad.read_h5ad(adata_path)
-    scores = {}
-    for cluster_key_feature in adata.obs.columns:
-        # cluster_key_feature = f"{CLUSTER_KEY}_{feature}"
-        if cluster_key_feature.startswith("Metadata_Cluster_"):
-            score = metric(adata, label_key, cluster_key_feature)
-            scores[cluster_key_feature] = score
-            logger.info(f'{metric} for feature {cluster_key_feature}: {score}')
-    # Save the nmi_scores dictionary to a JSON file
-    with open(metric_path, 'w') as json_file:
-        json.dump(metric_path, json_file, indent=4)
 
 
 def concat(*metric_paths, output_path):

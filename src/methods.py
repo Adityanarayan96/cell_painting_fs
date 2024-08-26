@@ -6,6 +6,7 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 # import io
+import random
 import os
 import pandas as pd
 import plotly.express as px
@@ -313,3 +314,55 @@ def display_interactive_umap(adata_path, clicked_points_path):
     display(dropdown)
     initial_fig = create_scatter_plot(dropdown.value)
     display(initial_fig)
+
+
+def create_manhattan_plot(grouping): #Input is a grouped dictionary
+    # Map each unique group name to a numeric value
+    unique_groups = list(grouping.keys())
+    group_to_numeric = {group: i for i, group in enumerate(unique_groups)}
+
+    # Prepare data for plotting with slight scatter in x-axis values
+    x_values = []
+    y_values = []
+    hover_texts = []
+    marker_colors = []
+
+    colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'cyan', 'magenta']
+    group_to_color = {group: colors[i % len(colors)] for i, group in enumerate(unique_groups)}
+
+    # Loop through each group and collect the values, adding scatter to x-values
+    for group, items in grouping.items():
+        for key, value in items:
+            # Convert the group to a numeric value and add random scatter
+            numeric_x = group_to_numeric[group] + random.uniform(-0.1, 0.1)
+            x_values.append(numeric_x)
+            y_values.append(value)
+            hover_texts.append(key)
+            marker_colors.append(group_to_color[group])  
+
+    # Create the Manhattan plot
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=x_values,
+        y=y_values,
+        mode='markers',
+        marker=dict(size=10, color=marker_colors),
+        text=hover_texts,
+        hoverinfo='text',
+    ))
+
+    # Set plot title and labels
+    fig.update_layout(
+        title='Manhattan Plot with Scatter',
+        xaxis=dict(
+            tickmode='array',
+            tickvals=list(group_to_numeric.values()),
+            ticktext=list(group_to_numeric.keys())
+        ),
+        yaxis_title='Values',
+        showlegend=False
+    )
+
+    # Display the plot
+    fig.show()
