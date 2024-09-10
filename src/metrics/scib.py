@@ -8,15 +8,14 @@ import pandas as pd
 import scanpy as sc
 from sklearn.metrics import silhouette_score
 import json
+import scipy.spatial.distance as sp
 
 from preprocessing.io import split_parquet, to_anndata
 
-with warnings.catch_warnings():
-    warnings.filterwarnings('ignore',
-                            category=ResourceWarning,
-                            message='Implicitly cleaning up')
-    from scib import metrics
-    from scib.metrics.pcr import pc_regression
+warnings.filterwarnings("ignore")
+
+from scib import metrics
+from scib.metrics.pcr import pc_regression
 
 logger = logging.getLogger(__name__)
 CLUSTER_KEY = 'Metadata_Cluster'
@@ -35,6 +34,18 @@ def filter_dmso(parquet_path):
     meta = meta[non_dmso_ix].reset_index(drop=True).copy()
     feats = feats[non_dmso_ix]
     return meta, feats, features
+
+def filter_by_label(parquet_path, label_key = "JCP2022_060040"):
+    meta, feats, features = filter_dmso(parquet_path)
+    compound_ix = meta['Metadata_JCP2022'] == label_key
+    meta = meta[compound_ix].reset_index(drop=True).copy()
+    feats = feats[compound_ix]
+    return meta, feats, features
+
+def filter_by_label_anndata(parquet_path, label_key = "JCP2022_012146"):
+    adata = to_anndata(parquet_path)
+    compound_ix = adata.obs['Metadata_JCP2022'] == label_key
+    return adata[compound_ix].copy()
 
 
 def cluster(parquet_path, adata_path):
@@ -93,7 +104,91 @@ def ari(adata_path, label_key, ari_path):
     ari = metrics.ari(adata, label_key, CLUSTER_KEY)
     np.array(ari).tofile(ari_path)
 
+def jenson_shannon_avg(feats, labels, bins=100):
+    """
+    Compute the average Jensen-Shannon divergence between the distribution of a feature in each cluster
+    and the distribution of the same feature in the whole dataset.
+    
+    Parameters
+    ----------
+    feats : np.array
+        Feature values
+    labels : np.array
+        Cluster labels
+    """
+    # print("no. of bins: ", bins)
+    q = np.histogram(feats, bins=bins, density=True)[0]
+    q_sum = np.sum(q)
+    if q_sum == 0:
+        raise ValueError("The overall feature distribution has zero sum.")
+    q /= q_sum  # Normalize overall distribution
+    
+    n_clusters = np.unique(labels)
+    # print(n_clusters)
+    n_samples = len(feats)
+    js = 0
+    for i in n_clusters:
+        cluster_ix = labels == i
+        cluster_feats = feats[cluster_ix]
+        cluster_size = len(cluster_feats)
+        # print(cluster_size)
+        if cluster_size == 0:
+            continue  # Skip empty clusters
+        p = np.histogram(cluster_feats, bins=bins, density=True)[0]
+        p_sum = np.sum(p)
+        # print(p_sum)
+        if p_sum == 0:
+            continue  # Skip empty cluster distributions
+        p /= p_sum  # Normalize cluster distribution
+        # Jensen-Shannon divergence weighted by cluster size
+        js += sp.jensenshannon(p, q) * cluster_size / n_samples
+    return js
 
+def average_jenson_shannon_per_feature(parquet_path, label_key, js_path):
+    """
+    Compute the average Jensen-Shannon divergence between the distribution of a feature in each cluster
+    and the distribution of the same feature in the whole dataset.
+    
+    Parameters
+    ----------
+    parquet_path : str
+        Path to the parquet file with the features
+    label_key : str
+        Name of the column with the cluster labels
+    js_path : str
+        Path to the output file with the Jensen-Shannon divergence values; it will be a JSON file dictionary
+    """
+    meta, feats, features = filter_dmso(parquet_path)
+    feature_scores = {features[i]: 0 for i in range(len(features))}
+    for i in tqdm(range(len(feats[0])), desc="Computing JS"):
+        js = jenson_shannon_avg(feats[:, i], meta[label_key])
+        feature_scores[features[i]] = js
+    
+    with open(js_path, 'w') as json_file:
+        json.dump(feature_scores, json_file, indent=4)
+    
+def average_jenson_shannon_per_feature_batch(parquet_path, label_key, js_path):
+    """
+    Compute the average Jensen-Shannon divergence between the distribution of a feature in each cluster
+    and the distribution of the same feature in the whole dataset.
+    
+    Parameters
+    ----------
+    parquet_path : str
+        Path to the parquet file with the features
+    label_key : str
+        Name of the column with the cluster labels
+    js_path : str
+        Path to the output file with the Jensen-Shannon divergence values; it will be a JSON file dictionary
+    """
+    meta, feats, features = filter_dmso(parquet_path)
+    feature_scores = {features[i]: 0 for i in range(len(features))}
+    for i in tqdm(range(len(feats[0])), desc="Computing JS"):
+        js = jenson_shannon_avg(feats[:, i], meta[label_key])
+        feature_scores[features[i]] = 1 - js
+    
+    with open(js_path, 'w') as json_file:
+        json.dump(feature_scores, json_file, indent=4)
 def asw(parquet_path, label_key, asw_path):
     meta, feats, _ = filter_dmso(parquet_path)
     asw = silhouette_score(feats, meta[label_key], metric='cosine')

@@ -74,7 +74,7 @@ def correlation_threshold(
 
 
     assert 0 <= threshold <= 1, "threshold variable must be between (0 and 1)"
-
+    print("Threshold: ", threshold)
     # Subset dataframe and calculate correlation matrix across subset features
     if samples != "all":
         population_df = population_df.loc[samples, :]

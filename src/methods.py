@@ -316,7 +316,7 @@ def display_interactive_umap(adata_path, clicked_points_path):
     display(initial_fig)
 
 
-def create_manhattan_plot(grouping): #Input is a grouped dictionary
+def create_manhattan_plot(grouping, save_path= "manhattan.html", title = 'Manhattan Plot with Scatter'): #Input is a grouped dictionary
     # Map each unique group name to a numeric value
     unique_groups = list(grouping.keys())
     group_to_numeric = {group: i for i, group in enumerate(unique_groups)}
@@ -334,7 +334,7 @@ def create_manhattan_plot(grouping): #Input is a grouped dictionary
     for group, items in grouping.items():
         for key, value in items:
             # Convert the group to a numeric value and add random scatter
-            numeric_x = group_to_numeric[group] + random.uniform(-0.1, 0.1)
+            numeric_x = group_to_numeric[group] + random.uniform(-0.4, 0.4)
             x_values.append(numeric_x)
             y_values.append(value)
             hover_texts.append(key)
@@ -354,7 +354,7 @@ def create_manhattan_plot(grouping): #Input is a grouped dictionary
 
     # Set plot title and labels
     fig.update_layout(
-        title='Manhattan Plot with Scatter',
+        title=title,
         xaxis=dict(
             tickmode='array',
             tickvals=list(group_to_numeric.values()),
@@ -363,6 +363,7 @@ def create_manhattan_plot(grouping): #Input is a grouped dictionary
         yaxis_title='Values',
         showlegend=False
     )
-
+    #Save the figure
+    fig.write_html(save_path)
     # Display the plot
     fig.show()
