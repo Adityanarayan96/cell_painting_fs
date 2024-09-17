@@ -104,7 +104,7 @@ def ari(adata_path, label_key, ari_path):
     ari = metrics.ari(adata, label_key, CLUSTER_KEY)
     np.array(ari).tofile(ari_path)
 
-def jenson_shannon_avg(feats, labels, bins=100):
+def jenson_shannon_avg(feats, labels, bins=10):
     """
     Compute the average Jensen-Shannon divergence between the distribution of a feature in each cluster
     and the distribution of the same feature in the whole dataset.
