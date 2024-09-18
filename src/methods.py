@@ -43,6 +43,9 @@ import anndata as ad
 import plotly.graph_objects as go
 from ipywidgets import widgets
 from IPython.display import display
+import umap.umap_ as umap
+import seaborn as sns
+
 
 
 def show_images_single_file_test(file, combine=False):
@@ -210,6 +213,106 @@ def plot_features(data=None, x_feature="Cells_AreaShape_Eccentricity",
     fig.show()
 
 
+import pandas as pd
+import plotly.express as px
+import umap.umap_ as umap
+from sklearn.preprocessing import StandardScaler
+
+def display_umap(parquet_paths: list, labels = ["Baseline", "top-k", "scVI", "PCA"], left="Metadata_JCP2022", right="Metadata_Source") -> None:
+    """
+    Plot UMAP embeddings based on specified metadata columns for each Parquet file.
+    Creates grid plots using Seaborn without interactive capabilities and scaling.
+
+    Parameters:
+    - parquet_paths: List of paths to Parquet files.
+    - left: Name of the first metadata column to color the UMAP plot.
+    - right: Name of the second metadata column to color the UMAP plot.
+    """
+    sns.set(style="whitegrid")
+    
+    num_files = len(parquet_paths)
+    fig, axes = plt.subplots(nrows=num_files, ncols=2, figsize=(10, 5 * num_files))
+    
+    if num_files == 1:
+        axes = [axes]
+    
+    for idx, path in enumerate(parquet_paths):
+        print(f"Processing file: {path}")
+        
+        # Read data from Parquet file
+        df = pd.read_parquet(path)
+        
+        # Identify metadata columns (assuming they start with 'Metadata_')
+        metadata_cols = [col for col in df.columns if col.startswith('Metadata_')]
+        data_cols = [col for col in df.columns if col not in metadata_cols]
+        
+        # Extract data matrix and metadata
+        data = df[data_cols]
+        meta = df[metadata_cols]
+        
+        # Check if 'left' and 'right' metadata columns exist
+        if left not in meta.columns or right not in meta.columns:
+            print(f"Error: Specified metadata columns '{left}' or '{right}' not found in {path}.")
+            continue
+        
+        # **Reduce number of categories in 'left'**
+        value_counts_left = meta[left].value_counts()
+        threshold = 70  # Set your threshold
+        top_categories_left = value_counts_left[value_counts_left > threshold].index
+        meta[left] = meta[left].apply(lambda x: x if x in top_categories_left else 'Other')
+        # Remove Other category
+        data = data[meta[left] != 'Other']
+        meta = meta[meta[left] != 'Other']
+        # Remove DMSO
+        data = data[meta[left] != 'DMSO']
+        meta = meta[meta[left] != 'DMSO']
+        # print(meta[left].value_counts())
+
+        # Compute UMAP embedding without scaling
+        umap_embedder = umap.UMAP(n_neighbors=50, min_dist=0.1, metric='euclidean')
+        umap_coords = umap_embedder.fit_transform(data)
+        
+        # Create a DataFrame for plotting
+        umap_df = pd.DataFrame({
+            'UMAP1': umap_coords[:, 0],
+            'UMAP2': umap_coords[:, 1],
+            left: meta[left],
+            right: meta[right]
+        })
+        
+        # Plot UMAP colored by 'left' metadata column
+        sns.scatterplot(
+            ax=axes[idx][0] if num_files > 1 else axes[0],
+            data=umap_df,
+            x='UMAP1',
+            y='UMAP2',
+            hue=left,
+            palette='deep',
+            s=3,
+            linewidth=0,
+            legend=False,
+            
+        )
+        axes[idx][0].set_title(f"UMAP of {labels[idx]} colored by {left}")
+        
+        # Plot UMAP colored by 'right' metadata column
+        sns.scatterplot(
+            ax=axes[idx][1] if num_files > 1 else axes[1],
+            data=umap_df,
+            x='UMAP1',
+            y='UMAP2',
+            hue=right,
+            palette='deep',
+            s=3,
+            linewidth=0,
+            legend=False
+        )
+        axes[idx][1].set_title(f"UMAP of {labels[idx]} colored by {right}")
+    
+    plt.tight_layout()
+    plt.show()
+
+
 
 
 # Method to display an interactive UMAP plot with metadata labels
@@ -315,6 +418,125 @@ def display_interactive_umap(adata_path, clicked_points_path):
     initial_fig = create_scatter_plot(dropdown.value)
     display(initial_fig)
 
+def display_interactive_umap_paraquet(csv_path, clicked_points_path):
+    # Read data from CSV
+    df = pd.read_parquet(csv_path)
+    
+    # Identify metadata columns (assuming they start with 'Metadata_')
+    metadata_cols = [col for col in df.columns if col.startswith('Metadata_')]
+    data_cols = [col for col in df.columns if col not in metadata_cols]
+    
+    # Extract data matrix and metadata
+    data = df[data_cols]
+    meta = df[metadata_cols]
+    
+    # Compute UMAP embedding
+    # umap_embedder = umap.UMAP()
+    umap_embedder = umap.UMAP(n_neighbors=50, min_dist=0.1, metric='euclidean')
+    umap_coords = umap_embedder.fit_transform(data)
+    
+    
+    # Initialize the click data list and DataFrame
+    click_data = []
+    click_df = pd.DataFrame(columns=['Metadata_Source', 'Metadata_Batch', 'Metadata_Plate', 'Metadata_Well'])
+    
+    # Dropdown widget for selecting the metadata column
+    metadata_cols_sorted = sorted(metadata_cols)  # Sort columns lexicographically
+    dropdown = widgets.Dropdown(
+        options=metadata_cols_sorted,
+        value=metadata_cols_sorted[0],
+        description='Label:',
+    )
+    
+    # Function to create the scatter plot with a specific metadata column for labeling and color coding
+    def create_scatter_plot(label_col):
+        # Map the metadata column to colors using Plotly's built-in function
+        color_sequence = px.colors.qualitative.Plotly
+        unique_values = sorted(meta[label_col].unique())  # Sort values lexicographically
+        color_map = {val: color_sequence[i % len(color_sequence)] for i, val in enumerate(unique_values)}
+    
+        fig = go.FigureWidget()
+    
+        for value in unique_values:
+            indices = meta[label_col] == value
+            scatter = go.Scatter(
+                x=umap_coords[indices, 0],
+                y=umap_coords[indices, 1],
+                mode='markers',
+                marker=dict(size=3, color=color_map[value]),
+                name=str(value),
+                text=meta[indices][label_col],
+                customdata=meta[indices][['Metadata_Source', 'Metadata_Batch', 'Metadata_Plate', 'Metadata_Well']],
+                visible=True
+            )
+            fig.add_trace(scatter)
+    
+        fig.update_layout(
+            title="UMAP Scatter Plot",
+            width=1000,
+            height=500,
+            xaxis_title='UMAP 1',
+            yaxis_title='UMAP 2',
+            yaxis=dict(
+                scaleanchor='x',
+                scaleratio=1,
+            ),
+            updatemenus=[
+                {
+                    "buttons": [
+                        {
+                            "label": str(value),
+                            "method": "update",
+                            "args": [
+                                {"visible": [val == value for val in unique_values]},
+                                {"title": f"UMAP Scatter Plot - {value}"}
+                            ]
+                        }
+                        for value in unique_values
+                    ],
+                    "direction": "down",
+                    "showactive": True
+                }
+            ]
+        )
+    
+        # Add click event handling for all traces
+        for trace in fig.data:
+            trace.on_click(handle_click)
+    
+        return fig
+    
+    # Click event handling function
+    def handle_click(trace, points, state):
+        nonlocal click_data, click_df
+        if points.point_inds:
+            ind = points.point_inds[0]
+            click_info = {
+                'Metadata_Source': trace.customdata[ind][0],
+                'Metadata_Batch': trace.customdata[ind][1],
+                'Metadata_Plate': trace.customdata[ind][2],
+                'Metadata_Well': trace.customdata[ind][3]
+            }
+            click_data.append(click_info)
+    
+            # Convert the click_info to a DataFrame and concatenate
+            click_info_df = pd.DataFrame([click_info])
+            click_df = pd.concat([click_df, click_info_df], ignore_index=True)
+            click_df.to_csv(clicked_points_path, index=False)
+    
+            print("Click registered:", click_info)
+    
+    # Function to update the plot based on dropdown selection
+    def update_plot(change):
+        fig = create_scatter_plot(change.new)
+        display(fig)
+    
+    dropdown.observe(update_plot, names='value')
+    
+    # Display the dropdown and the initial plot
+    display(dropdown)
+    initial_fig = create_scatter_plot(dropdown.value)
+    display(initial_fig)
 
 def create_manhattan_plot(grouping, save_path= "manhattan.html", title = 'Manhattan Plot with Scatter'): #Input is a grouped dictionary
     # Map each unique group name to a numeric value
